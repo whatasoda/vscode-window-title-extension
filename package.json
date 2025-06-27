@@ -27,7 +27,9 @@
     "watch": "tsc -watch -p ./",
     "pretest": "bun run compile && bun run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
+    "test": "node ./out/test/runTest.js",
+    "package": "bun x vsce package",
+    "install-extension": "bun run package && code --install-extension vscode-window-title-extension-0.0.1.vsix"
   },
   "devDependencies": {
     "@types/vscode": "^1.74.0",

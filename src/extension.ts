@@ -36,7 +36,10 @@ function getWorktreeName(workspacePath: string): string | undefined {
 export function activate(context: vscode.ExtensionContext) {
     console.log('Window Title Extension is now active!');
 
-    const updateWindowTitle = () => {
+    let originalTitle: string | undefined;
+    let currentWorktreeName: string | undefined;
+
+    const updateWindowTitle = async () => {
         const workspaceFolders = vscode.workspace.workspaceFolders;
         
         if (!workspaceFolders || workspaceFolders.length === 0) {
@@ -45,6 +48,14 @@ export function activate(context: vscode.ExtensionContext) {
 
         const workspacePath = workspaceFolders[0].uri.fsPath;
         const worktreeName = getWorktreeName(workspacePath);
+        currentWorktreeName = worktreeName;
+
+        const windowConfig = vscode.workspace.getConfiguration('window');
+        const currentTitle = windowConfig.get<string>('title');
+        
+        if (!originalTitle && currentTitle && !currentTitle.includes('${worktreeName}')) {
+            originalTitle = currentTitle;
+        }
 
         const config = vscode.workspace.getConfiguration('windowTitleExtension');
         let template = config.get<string>('template') || '${activeEditorShort}${separator}${rootName}${separator}${worktreeName}';
@@ -56,7 +67,7 @@ export function activate(context: vscode.ExtensionContext) {
             template = template.replace(/\$\{worktreeName\}/g, '');
         }
 
-        vscode.workspace.getConfiguration('window').update('title', template, vscode.ConfigurationTarget.Workspace);
+        await vscode.workspace.getConfiguration('window').update('title', template, vscode.ConfigurationTarget.Global);
     };
 
     updateWindowTitle();
@@ -69,7 +80,7 @@ export function activate(context: vscode.ExtensionContext) {
     watcher.onDidDelete(updateWindowTitle);
 
     const configWatcher = vscode.workspace.onDidChangeConfiguration(e => {
-        if (e.affectsConfiguration('windowTitleExtension.template')) {
+        if (e.affectsConfiguration('windowTitleExtension.template') || e.affectsConfiguration('window.title')) {
             updateWindowTitle();
         }
     });
@@ -77,6 +88,17 @@ export function activate(context: vscode.ExtensionContext) {
 
     const folderWatcher = vscode.workspace.onDidChangeWorkspaceFolders(updateWindowTitle);
     context.subscriptions.push(folderWatcher);
+
+    const activeEditorWatcher = vscode.window.onDidChangeActiveTextEditor(updateWindowTitle);
+    context.subscriptions.push(activeEditorWatcher);
+
+    context.subscriptions.push({
+        dispose: async () => {
+            if (originalTitle !== undefined) {
+                await vscode.workspace.getConfiguration('window').update('title', originalTitle, vscode.ConfigurationTarget.Global);
+            }
+        }
+    });
 }
 
 export function deactivate() {}
