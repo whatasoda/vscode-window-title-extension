@@ -6,7 +6,13 @@
   "engines": {
     "vscode": "^1.74.0"
   },
-  "categories": ["Other"],
+  "categories": [
+    "Other"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/whatasoda/vscode-window-title-extension"
+  },
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
@@ -26,17 +32,17 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "bun run compile && bun run lint",
-    "lint": "eslint src --ext ts",
+    "lint": "biome check",
+    "lint:fix": "biome check --write",
+    "format": "biome format --write",
     "test": "node ./out/test/runTest.js",
     "package": "bun x vsce package",
     "install-extension": "bun run package && code --install-extension vscode-window-title-extension-0.0.1.vsix"
   },
   "devDependencies": {
-    "@types/vscode": "^1.74.0",
+    "@biomejs/biome": "^2.0.5",
     "@types/node": "16.x",
-    "@typescript-eslint/eslint-plugin": "^5.45.0",
-    "@typescript-eslint/parser": "^5.45.0",
-    "eslint": "^8.28.0",
+    "@types/vscode": "^1.74.0",
     "typescript": "^4.9.3"
   }
 }
