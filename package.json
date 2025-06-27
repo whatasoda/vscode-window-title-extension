@@ -19,10 +19,10 @@
     "configuration": {
       "title": "Window Title Extension",
       "properties": {
-        "windowTitleExtension.template": {
-          "type": "string",
-          "default": "${activeEditorShort}${separator}${rootName}${separator}${worktreeName}",
-          "description": "Template for window title. Available variables: ${worktreeName}"
+        "windowTitleExtension.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the window title extension to add ${worktreeName} variable"
         }
       }
     }

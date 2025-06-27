@@ -18,7 +18,7 @@ function getWorktreeName(workspacePath: string): string | undefined {
 
       if (match) {
         const gitDirPath = match[1];
-        const worktreeMatch = gitDirPath.match(/\.git[/\\]worktrees[/\\]([^/\\]+)$/);
+        const worktreeMatch = gitDirPath.match(/\.git[\/\\]worktrees[\/\\]([^\/\\]+)$/);
 
         if (worktreeMatch) {
           return worktreeMatch[1];
@@ -33,41 +33,29 @@ function getWorktreeName(workspacePath: string): string | undefined {
   }
 }
 
-class WorktreeVariableProvider {
-  private worktreeName: string | undefined;
+export function activate(context: vscode.ExtensionContext) {
+  console.log("Window Title Extension is now active!");
 
-  constructor() {
-    this.updateWorktreeName();
-  }
+  let currentWorktreeName: string | undefined;
+  let originalWindowTitle: string | undefined;
 
-  updateWorktreeName() {
+  const updateWorktreeName = () => {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders || workspaceFolders.length === 0) {
-      this.worktreeName = undefined;
+      currentWorktreeName = undefined;
       return;
     }
 
     const workspacePath = workspaceFolders[0].uri.fsPath;
-    this.worktreeName = getWorktreeName(workspacePath);
-  }
-
-  getWorktreeName(): string {
-    return this.worktreeName || "";
-  }
-}
-
-export function activate(context: vscode.ExtensionContext) {
-  console.log("Window Title Extension is now active!");
-
-  const provider = new WorktreeVariableProvider();
-  let isSettingTitle = false;
+    currentWorktreeName = getWorktreeName(workspacePath);
+  };
 
   const replaceVariables = (template: string): string => {
     const activeEditor = vscode.window.activeTextEditor;
     const workspace = vscode.workspace.workspaceFolders?.[0];
 
     const replacements: Record<string, string> = {
-      "${worktreeName}": provider.getWorktreeName(),
+      "${worktreeName}": currentWorktreeName || "",
       "${activeEditorShort}": activeEditor ? path.basename(activeEditor.document.fileName) : "",
       "${activeEditorMedium}": activeEditor
         ? vscode.workspace.asRelativePath(activeEditor.document.fileName)
@@ -86,6 +74,7 @@ export function activate(context: vscode.ExtensionContext) {
       result = result.replace(new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), value);
     }
 
+    // 空のセパレータをクリーンアップ
     result = result.replace(/\s*-\s*-\s*/g, " - ");
     result = result.replace(/^\s*-\s*/, "");
     result = result.replace(/\s*-\s*$/, "");
@@ -93,74 +82,77 @@ export function activate(context: vscode.ExtensionContext) {
     return result;
   };
 
-  const updateTitle = () => {
-    if (isSettingTitle) return;
+  const updateTitle = async () => {
+    updateWorktreeName();
 
-    provider.updateWorktreeName();
+    const windowConfig = vscode.workspace.getConfiguration("window");
+    const currentTitle = windowConfig.get<string>("title");
 
-    const config = vscode.workspace.getConfiguration("windowTitleExtension");
-    const template =
-      config.get<string>("template") ||
-      "${activeEditorShort}${separator}${rootName}${separator}${worktreeName}";
-    const processedTitle = replaceVariables(template);
-
-    const currentProcessedTitle = (vscode.window as any).title || "";
-    if (currentProcessedTitle !== processedTitle) {
-      isSettingTitle = true;
-      setTimeout(() => {
-        const setWindowTitle = (vscode.window as any).setWindowTitle;
-        if (setWindowTitle) {
-          setWindowTitle(processedTitle);
-        } else {
-          const terminal = vscode.window.createTerminal({
-            name: "Window Title Setter",
-            hideFromUser: true,
-          });
-          terminal.sendText(`echo -ne "\033]0;${processedTitle}\007"`);
-          setTimeout(() => terminal.dispose(), 100);
-        }
-        isSettingTitle = false;
-      }, 0);
+    // 初回実行時に元のタイトルを保存
+    if (originalWindowTitle === undefined && currentTitle) {
+      originalWindowTitle = currentTitle;
     }
+
+    // 拡張機能が有効な場合のみ処理
+    const extensionConfig = vscode.workspace.getConfiguration("windowTitleExtension");
+    const isEnabled = extensionConfig.get<boolean>("enabled", true);
+
+    if (!isEnabled) {
+      return;
+    }
+
+    let templateToUse = originalWindowTitle || "${activeEditorShort}${separator}${rootName}";
+
+    // ${worktreeName}が含まれていない場合は追加
+    if (!templateToUse.includes("${worktreeName}") && currentWorktreeName) {
+      templateToUse = templateToUse + "${separator}${worktreeName}";
+    }
+
+    const processedTitle = replaceVariables(templateToUse);
+
+    // window.titleを更新（Global設定を使用）
+    await windowConfig.update("title", processedTitle, vscode.ConfigurationTarget.Global);
   };
 
-  const debounce = (func: () => void, wait: number) => {
-    let timeout: NodeJS.Timeout;
-    return () => {
-      clearTimeout(timeout);
-      timeout = setTimeout(func, wait);
-    };
-  };
-
-  const debouncedUpdateTitle = debounce(updateTitle, 100);
-
-  debouncedUpdateTitle();
+  // 初回実行
+  updateTitle();
 
   const watcher = vscode.workspace.createFileSystemWatcher("**/.git");
   context.subscriptions.push(watcher);
 
-  watcher.onDidCreate(debouncedUpdateTitle);
-  watcher.onDidChange(debouncedUpdateTitle);
-  watcher.onDidDelete(debouncedUpdateTitle);
+  watcher.onDidCreate(updateTitle);
+  watcher.onDidChange(updateTitle);
+  watcher.onDidDelete(updateTitle);
 
   const configWatcher = vscode.workspace.onDidChangeConfiguration((e) => {
-    if (e.affectsConfiguration("windowTitleExtension.template")) {
-      debouncedUpdateTitle();
+    if (e.affectsConfiguration("windowTitleExtension.enabled")) {
+      updateTitle();
     }
   });
   context.subscriptions.push(configWatcher);
 
-  const folderWatcher = vscode.workspace.onDidChangeWorkspaceFolders(debouncedUpdateTitle);
+  const folderWatcher = vscode.workspace.onDidChangeWorkspaceFolders(updateTitle);
   context.subscriptions.push(folderWatcher);
 
-  const activeEditorWatcher = vscode.window.onDidChangeActiveTextEditor(debouncedUpdateTitle);
+  const activeEditorWatcher = vscode.window.onDidChangeActiveTextEditor(updateTitle);
   context.subscriptions.push(activeEditorWatcher);
 
-  const saveWatcher = vscode.workspace.onDidSaveTextDocument(debouncedUpdateTitle);
+  const saveWatcher = vscode.workspace.onDidSaveTextDocument(updateTitle);
   context.subscriptions.push(saveWatcher);
 
-  const dirtyWatcher = vscode.workspace.onDidChangeTextDocument(debouncedUpdateTitle);
+  const dirtyWatcher = vscode.workspace.onDidChangeTextDocument(updateTitle);
   context.subscriptions.push(dirtyWatcher);
+
+  // 拡張機能が無効化されたときに元のタイトルに戻す
+  context.subscriptions.push({
+    dispose: async () => {
+      if (originalWindowTitle !== undefined) {
+        await vscode.workspace
+          .getConfiguration("window")
+          .update("title", originalWindowTitle, vscode.ConfigurationTarget.Global);
+      }
+    },
+  });
 }
 
 export function deactivate() {}
